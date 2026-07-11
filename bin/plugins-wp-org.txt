@@ -1,0 +1,16 @@
+# إضافات مجانية متوفرة رسمياً على WordPress.org — تُركَّب تلقائياً عبر setup-server.sh
+# (سطر واحد لكل slug، الأسطر التي تبدأ بـ # يتم تجاهلها)
+
+woocommerce
+elementor
+advanced-custom-fields
+litespeed-cache
+wp-smushit
+seo-by-rank-math
+loco-translate
+powerpack-lite-for-elementor
+happy-elementor-addons
+elementskit-lite
+user-role-editor
+members
+xoo-wc-side-cart
