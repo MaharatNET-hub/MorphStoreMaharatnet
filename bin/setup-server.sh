@@ -24,26 +24,59 @@ done
 DB_TABLE_PREFIX="${DB_TABLE_PREFIX:-wp_}"
 THEME_SLUG="astra-child-maharatnet"
 
-echo "== 1/8: التحقق من WP-CLI =="
-if ! command -v wp &> /dev/null; then
-	echo "تركيب WP-CLI..."
-	curl -sSL -o /usr/local/bin/wp https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
-	chmod +x /usr/local/bin/wp
-fi
-wp --info
-
+echo "== 1/9: التحقق من صلاحية الكتابة على WP_PATH =="
 mkdir -p "$WP_PATH"
+if ! touch "$WP_PATH/.ms-write-test" 2>/dev/null; then
+	cat >&2 <<EOF
+خطأ: المستخدم الحالي ($(whoami)) لا يملك صلاحية الكتابة على WP_PATH="$WP_PATH".
 
-echo "== 2/8: تحميل نواة ووردبريس =="
+هذا شائع على استضافات cPanel: مسارات مثل /var/www/... عادة مملوكة لـ root
+أو Apache وليست قابلة للكتابة من حساب المستخدم العادي. المسار الصحيح على
+cPanel يكون داخل مجلدك الشخصي، مثل:
+  /home/$(whoami)/morphstore.maharatnet.com
+  أو /home/$(whoami)/public_html  (إن كان هذا هو الدومين الأساسي)
+
+تأكّد من المسار الفعلي عبر لوحة cPanel (Domains > Document Root)، أو بتشغيل:
+  pwd   (بعد الدخول لمجلد الدومين من File Manager/SSH)
+
+ثم صحّح WP_PATH في ملف .env وأعد تحميله:
+  set -a && source .env && set +a
+  bash bin/setup-server.sh
+EOF
+	exit 1
+fi
+rm -f "$WP_PATH/.ms-write-test"
+
+echo "== 2/9: التحقق من WP-CLI =="
+WP_BIN=""
+if command -v wp &> /dev/null; then
+	WP_BIN="wp"
+else
+	echo "WP-CLI غير موجود — تركيبه..."
+	LOCAL_WP_BIN="$HOME/.local/bin/wp"
+	if curl -sSL -o /usr/local/bin/wp https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar 2>/dev/null \
+		&& chmod +x /usr/local/bin/wp 2>/dev/null; then
+		WP_BIN="/usr/local/bin/wp"
+	else
+		echo "تعذّرت الكتابة على /usr/local/bin (شائع على استضافة بدون صلاحيات root) — التركيب في $LOCAL_WP_BIN بدلاً من ذلك."
+		mkdir -p "$HOME/.local/bin"
+		curl -sSL -o "$LOCAL_WP_BIN" https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+		chmod +x "$LOCAL_WP_BIN"
+		WP_BIN="$LOCAL_WP_BIN"
+	fi
+fi
+"$WP_BIN" --info
+
+echo "== 3/9: تحميل نواة ووردبريس =="
 if [ ! -f "$WP_PATH/wp-load.php" ]; then
-	wp core download --path="$WP_PATH" --locale=ar
+	"$WP_BIN" core download --path="$WP_PATH" --locale=ar
 else
 	echo "ووردبريس موجود مسبقاً في $WP_PATH — تخطّي التحميل."
 fi
 
-echo "== 3/8: إعداد wp-config.php =="
+echo "== 4/9: إعداد wp-config.php =="
 if [ ! -f "$WP_PATH/wp-config.php" ]; then
-	wp config create \
+	"$WP_BIN" config create \
 		--path="$WP_PATH" \
 		--dbname="$DB_NAME" \
 		--dbuser="$DB_USER" \
@@ -59,9 +92,9 @@ else
 	echo "wp-config.php موجود مسبقاً — تخطّي."
 fi
 
-echo "== 4/8: تنصيب ووردبريس =="
-if ! wp core is-installed --path="$WP_PATH" 2>/dev/null; then
-	wp core install \
+echo "== 5/9: تنصيب ووردبريس =="
+if ! "$WP_BIN" core is-installed --path="$WP_PATH" 2>/dev/null; then
+	"$WP_BIN" core install \
 		--path="$WP_PATH" \
 		--url="$SITE_URL" \
 		--title="$SITE_TITLE" \
@@ -73,22 +106,22 @@ else
 	echo "ووردبريس مُنصَّب مسبقاً — تخطّي."
 fi
 
-echo "== 5/8: تركيب الثيم الأساسي Astra =="
-wp theme install astra --path="$WP_PATH" || echo "تنبيه: تعذّر تركيب Astra (قد يكون مُركَّباً مسبقاً)."
+echo "== 6/9: تركيب الثيم الأساسي Astra =="
+"$WP_BIN" theme install astra --path="$WP_PATH" || echo "تنبيه: تعذّر تركيب Astra (قد يكون مُركَّباً مسبقاً)."
 
-echo "== 6/8: تركيب وتفعيل الإضافات المجانية من WordPress.org =="
+echo "== 7/9: تركيب وتفعيل الإضافات المجانية من WordPress.org =="
 PLUGINS_FILE="$(dirname "$0")/plugins-wp-org.txt"
 failed_plugins=()
 while IFS= read -r plugin || [ -n "$plugin" ]; do
 	plugin="$(echo "$plugin" | sed 's/#.*//' | xargs)"
 	[ -z "$plugin" ] && continue
 	echo "  -> $plugin"
-	if ! wp plugin install "$plugin" --activate --path="$WP_PATH"; then
+	if ! "$WP_BIN" plugin install "$plugin" --activate --path="$WP_PATH"; then
 		failed_plugins+=("$plugin")
 	fi
 done < "$PLUGINS_FILE"
 
-echo "== 7/8: ربط الثيم الابن من هذا المستودع (git) =="
+echo "== 8/9: ربط الثيم الابن من هذا المستودع (git) =="
 if [ ! -d "$REPO_DIR/.git" ]; then
 	echo "استنساخ المستودع إلى $REPO_DIR ..."
 	git clone --branch "${REPO_BRANCH:-main}" "$REPO_URL" "$REPO_DIR"
@@ -107,10 +140,10 @@ else
 	echo "تم ربط الثيم: $THEME_TARGET -> $REPO_DIR/theme/$THEME_SLUG"
 fi
 
-echo "== 8/8: تفعيل الثيم الابن وضبط الإعدادات =="
-wp theme activate "$THEME_SLUG" --path="$WP_PATH"
-wp rewrite structure '/%postname%/' --path="$WP_PATH"
-wp rewrite flush --path="$WP_PATH"
+echo "== 9/9: تفعيل الثيم الابن وضبط الإعدادات =="
+"$WP_BIN" theme activate "$THEME_SLUG" --path="$WP_PATH"
+"$WP_BIN" rewrite structure '/%postname%/' --path="$WP_PATH"
+"$WP_BIN" rewrite flush --path="$WP_PATH"
 
 echo ""
 echo "======================================================================"

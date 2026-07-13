@@ -18,10 +18,15 @@ git -C "$REPO_DIR" fetch origin "$REPO_BRANCH"
 git -C "$REPO_DIR" checkout "$REPO_BRANCH"
 git -C "$REPO_DIR" pull origin "$REPO_BRANCH"
 
+WP_BIN="wp"
+if ! command -v wp &> /dev/null && [ -x "$HOME/.local/bin/wp" ]; then
+	WP_BIN="$HOME/.local/bin/wp"
+fi
+
 echo "تفريغ الكاش (إن وُجدت إضافة تخزين مؤقت مُفعّلة) ..."
-wp cache flush --path="$WP_PATH" || true
-if wp plugin is-active litespeed-cache --path="$WP_PATH" &> /dev/null; then
-	wp litespeed-purge all --path="$WP_PATH" || true
+"$WP_BIN" cache flush --path="$WP_PATH" || true
+if "$WP_BIN" plugin is-active litespeed-cache --path="$WP_PATH" &> /dev/null; then
+	"$WP_BIN" litespeed-purge all --path="$WP_PATH" || true
 fi
 
 echo "تم تحديث الموقع بآخر نسخة من الكود بنجاح."
